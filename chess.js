@@ -367,36 +367,29 @@ class ChessGame {
         this.updateStatus();
 
         try {
-            // Call Python bot via fetch
-            const response = await fetch('/get_bot_move', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    board: this.board,
-                    current_player: this.currentPlayer
-                })
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                if (data.move) {
-                    this.makeMove(data.move.from_row, data.move.from_col, data.move.to_row, data.move.to_col);
-                }
+            // Use local JavaScript bot instead of fetch
+            const bestMove = this.getBestBotMove();
+            if (bestMove) {
+                this.makeMove(bestMove.from_row, bestMove.from_col, bestMove.to_row, bestMove.to_col);
             } else {
-                console.error('Bot move failed');
+                console.error('Bot could not find a move');
                 // Fallback: make a random legal move
                 this.makeRandomMove();
             }
         } catch (error) {
-            console.error('Error calling bot:', error);
+            console.error('Error in bot move:', error);
             // Fallback: make a random legal move
             this.makeRandomMove();
         }
 
         this.isBotThinking = false;
         this.updateStatus();
+    }
+
+    // Chess Bot Logic (converted from Python)
+    getBestBotMove(depth = 3) {
+        const bot = new ChessBot(this.board, this.currentPlayer);
+        return bot.getBestMove(depth);
     }
 
     makeRandomMove() {
@@ -540,6 +533,513 @@ class ChessGame {
         if (botButton) {
             botButton.disabled = this.currentPlayer !== 'black' || this.isBotThinking;
         }
+    }
+}
+
+// Chess Bot Class (JavaScript implementation of the Python bot)
+class ChessBot {
+    constructor(board, currentPlayer) {
+        this.board = JSON.parse(JSON.stringify(board)); // Deep copy
+        this.currentPlayer = currentPlayer;
+        this.pieceValues = {
+            'pawn': 100,
+            'knight': 320,
+            'bishop': 330,
+            'rook': 500,
+            'queen': 900,
+            'king': 20000
+        };
+
+        // Position tables for piece-square evaluation
+        this.pawnTable = [
+            [0,  0,  0,  0,  0,  0,  0,  0],
+            [50, 50, 50, 50, 50, 50, 50, 50],
+            [10, 10, 20, 30, 30, 20, 10, 10],
+            [5,  5, 10, 25, 25, 10,  5,  5],
+            [0,  0,  0, 20, 20,  0,  0,  0],
+            [5, -5,-10,  0,  0,-10, -5,  5],
+            [5, 10, 10,-20,-20, 10, 10,  5],
+            [0,  0,  0,  0,  0,  0,  0,  0]
+        ];
+
+        this.knightTable = [
+            [-50,-40,-30,-30,-30,-30,-40,-50],
+            [-40,-20,  0,  0,  0,  0,-20,-40],
+            [-30,  0, 10, 15, 15, 10,  0,-30],
+            [-30,  5, 15, 20, 20, 15,  5,-30],
+            [-30,  0, 15, 20, 20, 15,  0,-30],
+            [-30,  5, 10, 15, 15, 10,  5,-30],
+            [-40,-20,  0,  5,  5,  0,-20,-40],
+            [-50,-40,-30,-30,-30,-30,-40,-50]
+        ];
+
+        this.bishopTable = [
+            [-20,-10,-10,-10,-10,-10,-10,-20],
+            [-10,  0,  0,  0,  0,  0,  0,-10],
+            [-10,  0,  5, 10, 10,  5,  0,-10],
+            [-10,  5,  5, 10, 10,  5,  5,-10],
+            [-10,  0, 10, 10, 10, 10,  0,-10],
+            [-10, 10, 10, 10, 10, 10, 10,-10],
+            [-10,  5,  0,  0,  0,  0,  5,-10],
+            [-20,-10,-10,-10,-10,-10,-10,-20]
+        ];
+
+        this.rookTable = [
+            [0,  0,  0,  0,  0,  0,  0,  0],
+            [5, 10, 10, 10, 10, 10, 10,  5],
+            [-5,  0,  0,  0,  0,  0,  0, -5],
+            [-5,  0,  0,  0,  0,  0,  0, -5],
+            [-5,  0,  0,  0,  0,  0,  0, -5],
+            [-5,  0,  0,  0,  0,  0,  0, -5],
+            [-5,  0,  0,  0,  0,  0,  0, -5],
+            [0,  0,  0,  5,  5,  0,  0,  0]
+        ];
+
+        this.queenTable = [
+            [-20,-10,-10, -5, -5,-10,-10,-20],
+            [-10,  0,  0,  0,  0,  0,  0,-10],
+            [-10,  0,  5,  5,  5,  5,  0,-10],
+            [-5,  0,  5,  5,  5,  5,  0, -5],
+            [0,  0,  5,  5,  5,  5,  0, -5],
+            [-10,  5,  5,  5,  5,  5,  0,-10],
+            [-10,  0,  5,  0,  0,  0,  0,-10],
+            [-20,-10,-10, -5, -5,-10,-10,-20]
+        ];
+
+        this.kingTable = [
+            [-30,-40,-40,-50,-50,-40,-40,-30],
+            [-30,-40,-40,-50,-50,-40,-40,-30],
+            [-30,-40,-40,-50,-50,-40,-40,-30],
+            [-30,-40,-40,-50,-50,-40,-40,-30],
+            [-20,-30,-30,-40,-40,-30,-30,-20],
+            [-10,-20,-20,-20,-20,-20,-20,-10],
+            [20, 20,  0,  0,  0,  0, 20, 20],
+            [20, 30, 10,  0,  0, 10, 30, 20]
+        ];
+    }
+
+    isValidPosition(row, col) {
+        return row >= 0 && row < 8 && col >= 0 && col < 8;
+    }
+
+    isPathClear(fromRow, fromCol, toRow, toCol) {
+        const rowDir = Math.sign(toRow - fromRow);
+        const colDir = Math.sign(toCol - fromCol);
+        let currentRow = fromRow + rowDir;
+        let currentCol = fromCol + colDir;
+
+        while (currentRow !== toRow || currentCol !== toCol) {
+            if (this.board[currentRow][currentCol] !== null) {
+                return false;
+            }
+            currentRow += rowDir;
+            currentCol += colDir;
+        }
+        return true;
+    }
+
+    getKingPosition(color) {
+        for (let row = 0; row < 8; row++) {
+            for (let col = 0; col < 8; col++) {
+                const piece = this.board[row][col];
+                if (piece && piece.type === 'king' && piece.color === color) {
+                    return { row, col };
+                }
+            }
+        }
+        return null;
+    }
+
+    isSquareAttacked(row, col, byColor) {
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const piece = this.board[r][c];
+                if (!piece || piece.color !== byColor) continue;
+
+                const moves = this.getLegalMovesForPiece(r, c, true);
+                if (moves.some(move => move.row === row && move.col === col)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    wouldBeInCheck(color, fromRow, fromCol, toRow, toCol) {
+        // Make temporary move
+        const originalPiece = this.board[toRow][toCol];
+        this.board[toRow][toCol] = this.board[fromRow][fromCol];
+        this.board[fromRow][fromCol] = null;
+
+        const kingPos = this.getKingPosition(color);
+        const isInCheck = this.isSquareAttacked(kingPos.row, kingPos.col, color === 'white' ? 'black' : 'white');
+
+        // Undo temporary move
+        this.board[fromRow][fromCol] = this.board[toRow][toCol];
+        this.board[toRow][toCol] = originalPiece;
+
+        return isInCheck;
+    }
+
+    getLegalMovesForPiece(row, col, ignoreCheck = false) {
+        const piece = this.board[row][col];
+        if (!piece) return [];
+
+        let moves = [];
+
+        switch (piece.type) {
+            case 'pawn':
+                moves = this.getPawnMoves(row, col, piece);
+                break;
+            case 'rook':
+                moves = this.getRookMoves(row, col, piece);
+                break;
+            case 'knight':
+                moves = this.getKnightMoves(row, col, piece);
+                break;
+            case 'bishop':
+                moves = this.getBishopMoves(row, col, piece);
+                break;
+            case 'queen':
+                moves = this.getQueenMoves(row, col, piece);
+                break;
+            case 'king':
+                moves = this.getKingMoves(row, col, piece);
+                break;
+        }
+
+        // Filter out moves that would put/leave king in check
+        if (!ignoreCheck) {
+            moves = moves.filter(move =>
+                !this.wouldBeInCheck(piece.color, row, col, move.row, move.col)
+            );
+        }
+
+        return moves;
+    }
+
+    getPawnMoves(row, col, piece) {
+        const moves = [];
+        const direction = piece.color === 'white' ? -1 : 1;
+        const startRow = piece.color === 'white' ? 6 : 1;
+
+        // Forward move
+        const forwardRow = row + direction;
+        if (this.isValidPosition(forwardRow, col) && this.board[forwardRow][col] === null) {
+            moves.push({ row: forwardRow, col });
+
+            // Double move from start
+            if (row === startRow) {
+                const doubleRow = row + 2 * direction;
+                if (this.board[doubleRow][col] === null) {
+                    moves.push({ row: doubleRow, col });
+                }
+            }
+        }
+
+        // Diagonal captures
+        for (let dc of [-1, 1]) {
+            const captureRow = row + direction;
+            const captureCol = col + dc;
+            if (this.isValidPosition(captureRow, captureCol)) {
+                const targetPiece = this.board[captureRow][captureCol];
+                if (targetPiece && targetPiece.color !== piece.color) {
+                    moves.push({ row: captureRow, col: captureCol });
+                }
+            }
+        }
+
+        return moves;
+    }
+
+    getRookMoves(row, col, piece) {
+        const moves = [];
+        const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+
+        for (const [dr, dc] of directions) {
+            let r = row + dr, c = col + dc;
+            while (this.isValidPosition(r, c)) {
+                const targetPiece = this.board[r][c];
+                if (!targetPiece) {
+                    moves.push({ row: r, col: c });
+                } else {
+                    if (targetPiece.color !== piece.color) {
+                        moves.push({ row: r, col: c });
+                    }
+                    break;
+                }
+                r += dr;
+                c += dc;
+            }
+        }
+
+        return moves;
+    }
+
+    getKnightMoves(row, col, piece) {
+        const moves = [];
+        const knightMoves = [
+            [-2, -1], [-2, 1], [-1, -2], [-1, 2],
+            [1, -2], [1, 2], [2, -1], [2, 1]
+        ];
+
+        for (const [dr, dc] of knightMoves) {
+            const r = row + dr, c = col + dc;
+            if (this.isValidPosition(r, c)) {
+                const targetPiece = this.board[r][c];
+                if (!targetPiece || targetPiece.color !== piece.color) {
+                    moves.push({ row: r, col: c });
+                }
+            }
+        }
+
+        return moves;
+    }
+
+    getBishopMoves(row, col, piece) {
+        const moves = [];
+        const directions = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+
+        for (const [dr, dc] of directions) {
+            let r = row + dr, c = col + dc;
+            while (this.isValidPosition(r, c)) {
+                const targetPiece = this.board[r][c];
+                if (!targetPiece) {
+                    moves.push({ row: r, col: c });
+                } else {
+                    if (targetPiece.color !== piece.color) {
+                        moves.push({ row: r, col: c });
+                    }
+                    break;
+                }
+                r += dr;
+                c += dc;
+            }
+        }
+
+        return moves;
+    }
+
+    getQueenMoves(row, col, piece) {
+        const moves = [];
+        // Combine rook and bishop moves
+        const directions = [
+            [0, 1], [0, -1], [1, 0], [-1, 0], // rook
+            [1, 1], [1, -1], [-1, 1], [-1, -1] // bishop
+        ];
+
+        for (const [dr, dc] of directions) {
+            let r = row + dr, c = col + dc;
+            while (this.isValidPosition(r, c)) {
+                const targetPiece = this.board[r][c];
+                if (!targetPiece) {
+                    moves.push({ row: r, col: c });
+                } else {
+                    if (targetPiece.color !== piece.color) {
+                        moves.push({ row: r, col: c });
+                    }
+                    break;
+                }
+                r += dr;
+                c += dc;
+            }
+        }
+
+        return moves;
+    }
+
+    getKingMoves(row, col, piece) {
+        const moves = [];
+        const directions = [
+            [-1, -1], [-1, 0], [-1, 1],
+            [0, -1], [0, 1],
+            [1, -1], [1, 0], [1, 1]
+        ];
+
+        for (const [dr, dc] of directions) {
+            const r = row + dr, c = col + dc;
+            if (this.isValidPosition(r, c)) {
+                const targetPiece = this.board[r][c];
+                if (!targetPiece || targetPiece.color !== piece.color) {
+                    moves.push({ row: r, col: c });
+                }
+            }
+        }
+
+        return moves;
+    }
+
+    getAllLegalMoves(color) {
+        const moves = [];
+        for (let row = 0; row < 8; row++) {
+            for (let col = 0; col < 8; col++) {
+                const piece = this.board[row][col];
+                if (piece && piece.color === color) {
+                    const pieceMoves = this.getLegalMovesForPiece(row, col);
+                    for (const move of pieceMoves) {
+                        moves.push({
+                            from_row: row,
+                            from_col: col,
+                            to_row: move.row,
+                            to_col: move.col,
+                            piece: piece
+                        });
+                    }
+                }
+            }
+        }
+        return moves;
+    }
+
+    makeMove(fromRow, fromCol, toRow, toCol) {
+        this.board[toRow][toCol] = this.board[fromRow][fromCol];
+        this.board[fromRow][fromCol] = null;
+        this.currentPlayer = this.currentPlayer === 'white' ? 'black' : 'white';
+    }
+
+    evaluateBoard() {
+        let score = 0;
+
+        for (let row = 0; row < 8; row++) {
+            for (let col = 0; col < 8; col++) {
+                const piece = this.board[row][col];
+                if (piece) {
+                    let value = this.pieceValues[piece.type];
+                    let positionValue = 0;
+
+                    // Add position value based on piece type
+                    if (piece.type === 'pawn') {
+                        positionValue = piece.color === 'white' ? this.pawnTable[7-row][col] : this.pawnTable[row][col];
+                    } else if (piece.type === 'knight') {
+                        positionValue = piece.color === 'white' ? this.knightTable[7-row][col] : this.knightTable[row][col];
+                    } else if (piece.type === 'bishop') {
+                        positionValue = piece.color === 'white' ? this.bishopTable[7-row][col] : this.bishopTable[row][col];
+                    } else if (piece.type === 'rook') {
+                        positionValue = piece.color === 'white' ? this.rookTable[7-row][col] : this.rookTable[row][col];
+                    } else if (piece.type === 'queen') {
+                        positionValue = piece.color === 'white' ? this.queenTable[7-row][col] : this.queenTable[row][col];
+                    } else if (piece.type === 'king') {
+                        positionValue = piece.color === 'white' ? this.kingTable[7-row][col] : this.kingTable[row][col];
+                    }
+
+                    if (piece.color === 'white') {
+                        score += value + positionValue;
+                    } else {
+                        score -= value + positionValue;
+                    }
+                }
+            }
+        }
+
+        return score;
+    }
+
+    isGameOver() {
+        // Check if current player has any legal moves
+        const moves = this.getAllLegalMoves(this.currentPlayer);
+        return moves.length === 0;
+    }
+
+    minimax(depth, alpha, beta, maximizingPlayer) {
+        if (depth === 0 || this.isGameOver()) {
+            return this.evaluateBoard();
+        }
+
+        if (maximizingPlayer) {
+            let maxEval = -Infinity;
+            const moves = this.getAllLegalMoves(this.currentPlayer);
+
+            for (const move of moves) {
+                // Make move
+                const originalPiece = this.board[move.to_row][move.to_col];
+                this.board[move.to_row][move.to_col] = this.board[move.from_row][move.from_col];
+                this.board[move.from_row][move.from_col] = null;
+                const originalPlayer = this.currentPlayer;
+                this.currentPlayer = this.currentPlayer === 'white' ? 'black' : 'white';
+
+                // Recurse
+                const evalScore = this.minimax(depth - 1, alpha, beta, false);
+
+                // Undo move
+                this.board[move.from_row][move.from_col] = this.board[move.to_row][move.to_col];
+                this.board[move.to_row][move.to_col] = originalPiece;
+                this.currentPlayer = originalPlayer;
+
+                maxEval = Math.max(maxEval, evalScore);
+                alpha = Math.max(alpha, evalScore);
+                if (beta <= alpha) {
+                    break; // Alpha-beta pruning
+                }
+            }
+
+            return maxEval;
+        } else {
+            let minEval = Infinity;
+            const opponentColor = this.currentPlayer === 'white' ? 'black' : 'white';
+            const moves = this.getAllLegalMoves(opponentColor);
+
+            for (const move of moves) {
+                // Make move
+                const originalPiece = this.board[move.to_row][move.to_col];
+                this.board[move.to_row][move.to_col] = this.board[move.from_row][move.from_col];
+                this.board[move.from_row][move.from_col] = null;
+                const originalPlayer = this.currentPlayer;
+                this.currentPlayer = this.currentPlayer === 'white' ? 'black' : 'white';
+
+                // Recurse
+                const evalScore = this.minimax(depth - 1, alpha, beta, true);
+
+                // Undo move
+                this.board[move.from_row][move.from_col] = this.board[move.to_row][move.to_col];
+                this.board[move.to_row][move.to_col] = originalPiece;
+                this.currentPlayer = originalPlayer;
+
+                minEval = Math.min(minEval, evalScore);
+                beta = Math.min(beta, evalScore);
+                if (beta <= alpha) {
+                    break; // Alpha-beta pruning
+                }
+            }
+
+            return minEval;
+        }
+    }
+
+    getBestMove(depth = 3) {
+        let bestMove = null;
+        let bestValue = -Infinity;
+        let alpha = -Infinity;
+        let beta = Infinity;
+
+        const moves = this.getAllLegalMoves(this.currentPlayer);
+
+        if (moves.length === 0) {
+            return null;
+        }
+
+        for (const move of moves) {
+            // Make move
+            const originalPiece = this.board[move.to_row][move.to_col];
+            this.board[move.to_row][move.to_col] = this.board[move.from_row][move.from_col];
+            this.board[move.from_row][move.from_col] = null;
+            const originalPlayer = this.currentPlayer;
+            this.currentPlayer = this.currentPlayer === 'white' ? 'black' : 'white';
+
+            // Evaluate move
+            const moveValue = this.minimax(depth - 1, alpha, beta, false);
+
+            // Undo move
+            this.board[move.from_row][move.from_col] = this.board[move.to_row][move.to_col];
+            this.board[move.to_row][move.to_col] = originalPiece;
+            this.currentPlayer = originalPlayer;
+
+            if (moveValue > bestValue) {
+                bestValue = moveValue;
+                bestMove = move;
+            }
+        }
+
+        return bestMove;
     }
 }
 
