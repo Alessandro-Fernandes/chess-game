@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Game with AI Bot</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Chess Game vs AI Bot</h1>
+
+        <div class="game-info">
+            <div class="player-info">
+                <span>Current Player: <span id="currentPlayer">White</span></span>
+            </div>
+            <div class="status" id="status">Game started. White to move.</div>
+        </div>
+
+        <div class="board" id="board"></div>
+
+        <div class="controls">
+            <button onclick="resetGame()">New Game</button>
+            <button onclick="undoMove()">Undo Move</button>
+            <button onclick="makeBotMove()">Bot Move (Black)</button>
+        </div>
+
+        
+
+        <div class="move-history">
+            <h3>Move History</h3>
+            <div id="moveHistory"></div>
+        </div>
+    </div>
+
+    <script src="chess.js"></script>
+</body>
+</html>
