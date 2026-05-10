@@ -11,11 +11,11 @@ class ChessBot:
         self.board = self.initialize_board()
         self.current_player = 'black'  # Bot plays as black
         self.piece_values = {
-            'pawn': 100,
-            'knight': 320,
-            'bishop': 330,
-            'rook': 500,
-            'queen': 900,
+            'pawn': 1,
+            'knight': 3,
+            'bishop': 3.3,
+            'rook': 5,
+            'queen': 10,
             'king': 20000
         }
 
@@ -23,8 +23,8 @@ class ChessBot:
         self.pawn_table = [
             [0,  0,  0,  0,  0,  0,  0,  0],
             [50, 50, 50, 50, 50, 50, 50, 50],
-            [10, 10, 20, 30, 30, 20, 10, 10],
-            [5,  5, 10, 25, 25, 10,  5,  5],
+            [10, 10, 20, 30, 10, 10, 5, 20],
+            [5,  5, 15, 25, 30, 5,  5,  5],
             [0,  0,  0, 20, 20,  0,  0,  0],
             [5, -5,-10,  0,  0,-10, -5,  5],
             [5, 10, 10,-20,-20, 10, 10,  5],
