@@ -4,45 +4,85 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app)
 
 class ChessBot:
     def __init__(self):
         self.board = self.initialize_board()
-        self.current_player = 'black'  # Bot plays as black
+        self.current_player = 'black'
         self.piece_values = {
-            'pawn': 1,
-            'knight': 3,
-            'bishop': 3.3,
-            'rook': 5,
-            'queen': 10,
+            'pawn': 10,
+            'knight': 30,
+            'bishop': 33,
+            'rook': 50,
+            'queen': 100,
             'king': 20000
         }
+        # ===========================================
+        # PIECE-SQUARE TABLES - POSITIONAL VALUES
+        # ===========================================
+        #
+        # BOARD ORIENTATION:
+        # - Row 0 = Top of board (Black's starting side)
+        # - Row 7 = Bottom of board (White's starting side)
+        # - Col 0 = Left (a-file), Col 7 = Right (h-file)
+        #
+        # For white pieces: table[row][col] directly
+        # For black pieces: table[7-row][col] (vertically mirrored)
+        #
+        # Positive values = good positions, Negative values = bad positions
+        # ===========================================
 
-        # Position tables for piece-square evaluation
-        self.pawn_table = [
-            [0,  0,  0,  0,  0,  0,  0,  0],
+        self.pawn_table_white = [
+            [100, 100, 100, 100, 100, 100, 100, 100],
             [50, 50, 50, 50, 50, 50, 50, 50],
-            [10, 10, 20, 30, 10, 10, 5, 20],
-            [5,  5, 15, 25, 30, 5,  5,  5],
-            [0,  0,  0, 20, 20,  0,  0,  0],
-            [5, -5,-10,  0,  0,-10, -5,  5],
-            [5, 10, 10,-20,-20, 10, 10,  5],
+            [5, 5, 0, 10, 10, 0, 0, 0],
+            [0,  0, 0, 20, 20, 0,  0,  0],
+            [0,  -10,  -10, 40, 40,  -10,  -10,  0],
+            [5, -5,-5,  -10,  -10,-5, -5,  5],
+            [10, 15, 15,-20,-20, 15, 15,  10],
             [0,  0,  0,  0,  0,  0,  0,  0]
         ]
 
-        self.knight_table = [
-            [-50,-40,-30,-30,-30,-30,-40,-50],
-            [-40,-20,  0,  0,  0,  0,-20,-40],
-            [-30,  0, 10, 15, 15, 10,  0,-30],
-            [-30,  5, 15, 20, 20, 15,  5,-30],
-            [-30,  0, 15, 20, 20, 15,  0,-30],
-            [-30,  5, 10, 15, 15, 10,  5,-30],
-            [-40,-20,  0,  5,  5,  0,-20,-40],
-            [-50,-40,-30,-30,-30,-30,-40,-50]
+        # Black pawn table - mirrored vertically (7-row) because black sees board upside down
+        # Row 0 becomes Row 7, Row 7 becomes Row 0
+        self.pawn_table_black = [
+            [-100,  -100,  -100,  -100,  -100,  -100,  -100,  -100],
+            [-50, -50, -50, -50, -50, -50, -50, -50],
+            [-5, -5, 0, -10, -10, 0, 0, 0],
+            [0,  0, 0, -20, -20, 0,  0,  0],
+            [0,  10,  10, -40, -40,  10,  10,  0],
+            [-5, 5, 5,  -10,  -10,-5, -5,  5],
+            [-10, -15, -15, 20, 20, -15, -15, -10],
+            [0,  0,  0,  0,  0,  0,  0,  0]
         ]
 
-        self.bishop_table = [
+        # Knight tables: Corners are bad, center is good
+        # White knight table: Row 0-7 from white's perspective (bottom-up)
+        self.knight_table_white = [
+            [-50,-40,-30,-30,-30,-30,-40,-50],  # Row 0: Black's corner - very bad
+            [-40,-20,  0,  0,  0,  0,-20,-40],  # Row 1
+            [-30,  0, 10, 15, 15, 10,  0,-30],  # Row 2: Getting better
+            [-30,  5, 15, 20, 20, 15,  5,-30],  # Row 3: Center is best
+            [-30,  0, 15, 20, 20, 15,  0,-30],  # Row 4: Center still good
+            [-30,  5, 10, 15, 15, 10,  5,-30],  # Row 5
+            [-40,-20,  0,  5,  5,  0,-20,-40],  # Row 6
+            [-50,-40,-30,-30,-30,-30,-40,-50]   # Row 7: White's corner - bad
+        ]
+
+        # Black knight table: Values are negated and mirrored (7-row)
+        self.knight_table_black = [
+            [50, 40, 30, 30, 30, 30, 40, 50],   # Row 0 (becomes Row 7): White's corner
+            [40, 20,  0,  0,  0,  0, 20, 40],   # Row 1 (becomes Row 6)
+            [30,  0,-10,-15,-15,-10,  0, 30],   # Row 2 (becomes Row 5)
+            [30, -5,-15,-20,-20,-15, -5, 30],   # Row 3 (becomes Row 4): Center
+            [30,  0,-15,-20,-20,-15,  0, 30],   # Row 4 (becomes Row 3): Center
+            [30, -5,-10,-15,-15,-10, -5, 30],   # Row 5 (becomes Row 2)
+            [40, 20,  0, -5, -5,  0, 20, 40],  # Row 6 (becomes Row 1)
+            [50, 40, 30, 30, 30, 30, 40, 50]    # Row 7 (becomes Row 0): Black's corner
+        ]
+
+        self.bishop_table_white = [
             [-20,-10,-10,-10,-10,-10,-10,-20],
             [-10,  0,  0,  0,  0,  0,  0,-10],
             [-10,  0,  5, 10, 10,  5,  0,-10],
@@ -53,7 +93,18 @@ class ChessBot:
             [-20,-10,-10,-10,-10,-10,-10,-20]
         ]
 
-        self.rook_table = [
+        self.bishop_table_black = [
+            [20, 10, 10, 10, 10, 10, 10, 20],
+            [10,  0,  0,  0,  0,  0,  0, 10],
+            [10,  0, -5,-10,-10, -5,  0, 10],
+            [10, -5, -5,-10,-10, -5, -5, 10],
+            [10,  0,-10,-10,-10,-10,  0, 10],
+            [10,-10,-10,-10,-10,-10,-10, 10],
+            [10, -5,  0,  0,  0,  0, -5, 10],
+            [20, 10, 10, 10, 10, 10, 10, 20]
+        ]
+
+        self.rook_table_white = [
             [0,  0,  0,  0,  0,  0,  0,  0],
             [5, 10, 10, 10, 10, 10, 10,  5],
             [-5,  0,  0,  0,  0,  0,  0, -5],
@@ -64,7 +115,18 @@ class ChessBot:
             [0,  0,  0,  5,  5,  0,  0,  0]
         ]
 
-        self.queen_table = [
+        self.rook_table_black = [
+            [0,  0,  0, -5, -5,  0,  0,  0],
+            [5,  0,  0,  0,  0,  0,  0,  5],
+            [5,  0,  0,  0,  0,  0,  0,  5],
+            [5,  0,  0,  0,  0,  0,  0,  5],
+            [5,  0,  0,  0,  0,  0,  0,  5],
+            [5,  0,  0,  0,  0,  0,  0,  5],
+            [-5,-10,-10,-10,-10,-10,-10, -5],
+            [0,  0,  0,  0,  0,  0,  0,  0]
+        ]
+
+        self.queen_table_white = [
             [-20,-10,-10, -5, -5,-10,-10,-20],
             [-10,  0,  0,  0,  0,  0,  0,-10],
             [-10,  0,  5,  5,  5,  5,  0,-10],
@@ -75,7 +137,18 @@ class ChessBot:
             [-20,-10,-10, -5, -5,-10,-10,-20]
         ]
 
-        self.king_table = [
+        self.queen_table_black = [
+            [20, 10, 10,  5,  5, 10, 10, 20],
+            [10,  0,  0,  0,  0,  0,  0, 10],
+            [10,  0, -5, -5, -5, -5,  0, 10],
+            [5,  0, -5, -5, -5, -5,  0,  5],
+            [0,  0, -5, -5, -5, -5,  0,  5],
+            [10, -5, -5, -5, -5, -5,  0, 10],
+            [10,  0, -5,  0,  0,  0,  0, 10],
+            [20, 10, 10,  5,  5, 10, 10, 20]
+        ]
+
+        self.king_table_white = [
             [-30,-40,-40,-50,-50,-40,-40,-30],
             [-30,-40,-40,-50,-50,-40,-40,-30],
             [-30,-40,-40,-50,-50,-40,-40,-30],
@@ -86,10 +159,20 @@ class ChessBot:
             [20, 30, 10,  0,  0, 10, 30, 20]
         ]
 
+        self.king_table_black = [
+            [-20,-30,-10,  0,  0,-10,-30,-20],
+            [-20,-20,  0,  0,  0,  0,-20,-20],
+            [10, 20, 20, 20, 20, 20, 20, 10],
+            [20, 30, 30, 40, 40, 30, 30, 20],
+            [30, 40, 40, 50, 50, 40, 40, 30],
+            [30, 40, 40, 50, 50, 40, 40, 30],
+            [30, 40, 40, 50, 50, 40, 40, 30],
+            [30, 40, 40, 50, 50, 40, 40, 30]
+        ]
+
     def initialize_board(self):
         board = [[None for _ in range(8)] for _ in range(8)]
 
-        # Black pieces (top)
         board[0][0] = {'type': 'rook', 'color': 'black'}
         board[0][1] = {'type': 'knight', 'color': 'black'}
         board[0][2] = {'type': 'bishop', 'color': 'black'}
@@ -102,7 +185,6 @@ class ChessBot:
         for col in range(8):
             board[1][col] = {'type': 'pawn', 'color': 'black'}
 
-        # White pieces (bottom)
         for col in range(8):
             board[6][col] = {'type': 'pawn', 'color': 'white'}
 
@@ -165,7 +247,6 @@ class ChessBot:
         return False
 
     def would_be_in_check(self, color, from_row, from_col, to_row, to_col):
-        # Make temporary move
         original_piece = self.board[to_row][to_col]
         self.board[to_row][to_col] = self.board[from_row][from_col]
         self.board[from_row][from_col] = None
@@ -174,7 +255,6 @@ class ChessBot:
         opponent_color = 'black' if color == 'white' else 'white'
         is_in_check = self.is_square_attacked(king_pos[0], king_pos[1], opponent_color)
 
-        # Undo temporary move
         self.board[from_row][from_col] = self.board[to_row][to_col]
         self.board[to_row][to_col] = original_piece
 
@@ -200,7 +280,6 @@ class ChessBot:
         elif piece['type'] == 'king':
             moves = self.get_king_moves(row, col, piece)
 
-        # Filter out moves that would put/leave king in check
         if not ignore_check:
             moves = [move for move in moves if not self.would_be_in_check(piece['color'], row, col, move['row'], move['col'])]
 
@@ -211,18 +290,15 @@ class ChessBot:
         direction = -1 if piece['color'] == 'white' else 1
         start_row = 6 if piece['color'] == 'white' else 1
 
-        # Forward move
         forward_row = row + direction
         if self.is_valid_position(forward_row, col) and self.board[forward_row][col] is None:
             moves.append({'row': forward_row, 'col': col})
 
-            # Double move from start
             if row == start_row:
                 double_row = row + 2 * direction
                 if self.board[double_row][col] is None:
                     moves.append({'row': double_row, 'col': col})
 
-        # Diagonal captures
         for dc in [-1, 1]:
             capture_row = row + direction
             capture_col = col + dc
@@ -287,8 +363,8 @@ class ChessBot:
 
     def get_queen_moves(self, row, col, piece):
         moves = []
-        directions = [(0, 1), (0, -1), (1, 0), (-1, 0),  # rook
-                     (1, 1), (1, -1), (-1, 1), (-1, -1)]  # bishop
+        directions = [(0, 1), (0, -1), (1, 0), (-1, 0),
+                     (1, 1), (1, -1), (-1, 1), (-1, -1)]
 
         for dr, dc in directions:
             r, c = row + dr, col + dc
@@ -353,29 +429,46 @@ class ChessBot:
                     value = self.piece_values[piece['type']]
                     position_value = 0
 
-                    # Add position value based on piece type
+                    # Get positional bonus/penalty from piece-square tables
                     if piece['type'] == 'pawn':
-                        position_value = self.pawn_table[row if piece['color'] == 'white' else 7-row][col]
+                        if piece['color'] == 'white':
+                            # White uses table directly: row 0 = black side, row 7 = white side
+                            position_value = self.pawn_table_white[row][col]
+                        else:
+                            # Black uses mirrored table: 7-row flips the board vertically
+                            # So row 0 becomes row 7 (black's home), row 7 becomes row 0 (white's side)
+                            position_value = self.pawn_table_black[7-row][col]
                     elif piece['type'] == 'knight':
-                        position_value = self.knight_table[row if piece['color'] == 'white' else 7-row][col]
+                        if piece['color'] == 'white':
+                            position_value = self.knight_table_white[row][col]
+                        else:
+                            position_value = self.knight_table_black[7-row][col]
                     elif piece['type'] == 'bishop':
-                        position_value = self.bishop_table[row if piece['color'] == 'white' else 7-row][col]
+                        if piece['color'] == 'white':
+                            position_value = self.bishop_table_white[row][col]
+                        else:
+                            position_value = self.bishop_table_black[7-row][col]
                     elif piece['type'] == 'rook':
-                        position_value = self.rook_table[row if piece['color'] == 'white' else 7-row][col]
+                        if piece['color'] == 'white':
+                            position_value = self.rook_table_white[row][col]
+                        else:
+                            position_value = self.rook_table_black[7-row][col]
                     elif piece['type'] == 'queen':
-                        position_value = self.queen_table[row if piece['color'] == 'white' else 7-row][col]
+                        if piece['color'] == 'white':
+                            position_value = self.queen_table_white[row][col]
+                        else:
+                            position_value = self.queen_table_black[7-row][col]
                     elif piece['type'] == 'king':
-                        position_value = self.king_table[row if piece['color'] == 'white' else 7-row][col]
+                        if piece['color'] == 'white':
+                            position_value = self.king_table_white[row][col]
+                        else:
+                            position_value = self.king_table_black[7-row][col]
 
-                    if piece['color'] == 'white':
-                        score += value + position_value
-                    else:
-                        score -= value + position_value
+                    score += value + position_value
 
         return score
 
     def is_game_over(self):
-        # Check if current player has any legal moves
         moves = self.get_all_legal_moves(self.current_player)
         return len(moves) == 0
 
@@ -388,17 +481,14 @@ class ChessBot:
             moves = self.get_all_legal_moves(self.current_player)
 
             for move in moves:
-                # Make move
                 original_piece = self.board[move['to_row']][move['to_col']]
                 self.board[move['to_row']][move['to_col']] = self.board[move['from_row']][move['from_col']]
                 self.board[move['from_row']][move['from_col']] = None
                 original_player = self.current_player
                 self.current_player = 'black' if self.current_player == 'white' else 'white'
 
-                # Recurse
                 eval_score = self.minimax(depth - 1, alpha, beta, False)
 
-                # Undo move
                 self.board[move['from_row']][move['from_col']] = self.board[move['to_row']][move['to_col']]
                 self.board[move['to_row']][move['to_col']] = original_piece
                 self.current_player = original_player
@@ -406,7 +496,7 @@ class ChessBot:
                 max_eval = max(max_eval, eval_score)
                 alpha = max(alpha, eval_score)
                 if beta <= alpha:
-                    break  # Alpha-beta pruning
+                    break
 
             return max_eval
         else:
@@ -415,17 +505,14 @@ class ChessBot:
             moves = self.get_all_legal_moves(opponent_color)
 
             for move in moves:
-                # Make move
                 original_piece = self.board[move['to_row']][move['to_col']]
                 self.board[move['to_row']][move['to_col']] = self.board[move['from_row']][move['from_col']]
                 self.board[move['from_row']][move['from_col']] = None
                 original_player = self.current_player
                 self.current_player = 'black' if self.current_player == 'white' else 'white'
 
-                # Recurse
                 eval_score = self.minimax(depth - 1, alpha, beta, True)
 
-                # Undo move
                 self.board[move['from_row']][move['from_col']] = self.board[move['to_row']][move['to_col']]
                 self.board[move['to_row']][move['to_col']] = original_piece
                 self.current_player = original_player
@@ -433,11 +520,11 @@ class ChessBot:
                 min_eval = min(min_eval, eval_score)
                 beta = min(beta, eval_score)
                 if beta <= alpha:
-                    break  # Alpha-beta pruning
+                    break
 
             return min_eval
 
-    def get_best_move(self, depth=3):
+    def get_best_move(self, depth=5):
         best_move = None
         best_value = float('-inf')
         alpha = float('-inf')
@@ -449,17 +536,14 @@ class ChessBot:
             return None
 
         for move in moves:
-            # Make move
             original_piece = self.board[move['to_row']][move['to_col']]
             self.board[move['to_row']][move['to_col']] = self.board[move['from_row']][move['from_col']]
             self.board[move['from_row']][move['from_col']] = None
             original_player = self.current_player
             self.current_player = 'black' if self.current_player == 'white' else 'white'
 
-            # Evaluate move
             move_value = self.minimax(depth - 1, alpha, beta, False)
 
-            # Undo move
             self.board[move['from_row']][move['from_col']] = self.board[move['to_row']][move['to_col']]
             self.board[move['to_row']][move['to_col']] = original_piece
             self.current_player = original_player
@@ -470,7 +554,6 @@ class ChessBot:
 
         return best_move
 
-# Global bot instance
 bot = ChessBot()
 
 @app.route('/get_bot_move', methods=['POST'])
@@ -480,12 +563,10 @@ def get_bot_move():
         board = data.get('board', [])
         current_player = data.get('current_player', 'black')
 
-        # Update bot's board and current player
         bot.set_board_from_js(board)
         bot.current_player = current_player
 
-        # Get best move
-        best_move = bot.get_best_move(depth=3)
+        best_move = bot.get_best_move(depth=5)
 
         if best_move:
             return jsonify({
