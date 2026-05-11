@@ -542,11 +542,11 @@ class ChessBot {
         this.board = JSON.parse(JSON.stringify(board)); // Deep copy
         this.currentPlayer = currentPlayer;
         this.pieceValues = {
-            'pawn': 100,
-            'knight': 320,
-            'bishop': 330,
-            'rook': 500,
-            'queen': 900,
+            'pawn': 10,
+            'knight': 30,
+            'bishop': 33,
+            'rook': 50,
+            'queen': 100,
             'king': 20000
         };
 
