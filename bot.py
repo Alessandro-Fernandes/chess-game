@@ -590,5 +590,5 @@ def index():
 
 if __name__ == '__main__':
     print("Chess Bot Server starting...")
-    print("Bot plays as Black using Minimax algorithm")
+    print("Bot plays as White using Minimax algorithm")
     app.run(debug=True, host='0.0.0.0', port=5000)
