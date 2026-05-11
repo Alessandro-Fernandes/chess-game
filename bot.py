@@ -64,8 +64,7 @@ class ChessBot:
             [-40,-20,  -10,  -10,  -10,  -10,-20,-40],  # Row 1
             [-30,  -10, 0, -5, -5, 0,  -10,-30],  # Row 2: Getting better
             [-30,  5, 15, 20, 20, 15,  5,-30],  # Row 3: Center is best
-            [-30,  0, 15, 20, 20, 15,  0,-30],  # Row 4: Center still good
-            [-30,  5, 25, 15, 15, 25,  5,-30],  # Row 5
+            [-30,  0, 25, 20, 20, 25,  0,-30],  # Row 4: Center still good            [-30,  5, 10, 15, 15, 25,  5,-30],  # Row 5
             [-40,-20,  0,  5,  5,  0,-20,-40],  # Row 6
             [-50,-40,-30,-30,-30,-30,-40,-50]   # Row 7: White's corner - bad
         ]
@@ -169,6 +168,23 @@ class ChessBot:
             [30, 40, 40, 50, 50, 40, 40, 30],
             [30, 40, 40, 50, 50, 40, 40, 30]
         ]
+
+    def print_board(self):
+        """Debug function to print the current board state"""
+        print("\nCurrent board:")
+        for row in range(8):
+            line = ""
+            for col in range(8):
+                piece = self.board[row][col]
+                if piece:
+                    color_char = piece['color'][0].upper()  # W or B
+                    type_char = piece['type'][0].upper()     # P, N, B, R, Q, K
+                    line += f"{color_char}{type_char} "
+                else:
+                    line += ".. "
+            print(f"{8-row} {line}")
+        print("   a  b  c  d  e  f  g  h")
+        print(f"Current player: {self.current_player}")
 
     def initialize_board(self):
         board = [[None for _ in range(8)] for _ in range(8)]
@@ -480,57 +496,32 @@ class ChessBot:
                     else:
                         black_mobility += len(self.get_legal_moves_for_piece(row, col))
 
-        # Add mobility bonus (scaled down to not overpower material)
-        mobility_bonus = (white_mobility - black_mobility) * 2  # Back to ×2 as requested
+        # Add mobility bonus (simple and effective)
+        mobility_bonus = (white_mobility - black_mobility) * 3  # Slightly increased
         score += mobility_bonus
 
-        # Add center control bonus - more important!
+        # Add center control bonus (most important positional factor)
         center_squares = [(3,3), (3,4), (4,3), (4,4)]
         center_control = 0
         for row, col in center_squares:
             piece = self.board[row][col]
             if piece:
                 if piece['color'] == 'white':
-                    center_control += 25  # Increased from 10 to 25
+                    center_control += 20  # Good center control
                 else:
-                    center_control -= 25
+                    center_control -= 20
 
         score += center_control
 
-        # Add extended center control (squares around center)
-        extended_center = [(2,2), (2,3), (2,4), (2,5), (3,2), (3,5), (4,2), (4,5), (5,2), (5,3), (5,4), (5,5)]
-        extended_control = 0
-        for row, col in extended_center:
-            piece = self.board[row][col]
-            if piece:
-                if piece['color'] == 'white':
-                    extended_control += 10
-                else:
-                    extended_control -= 10
-
-        score += extended_control
-
-        # Development bonus - encourage moving pieces from starting positions
+        # Simple development bonus - just check if knights moved from corners
         development_bonus = 0
-
-        # Knights should move from starting corners
-        if self.board[0][1] is None or self.board[0][1]['type'] != 'knight':  # White knight developed
-            development_bonus += 15
-        if self.board[0][6] is None or self.board[0][6]['type'] != 'knight':
-            development_bonus += 15
-        if self.board[7][1] is None or self.board[7][1]['type'] != 'knight':  # Black knight developed
-            development_bonus -= 15
-        if self.board[7][6] is None or self.board[7][6]['type'] != 'knight':
-            development_bonus -= 15
-
-        # Bishops should move from starting positions
-        if self.board[0][2] is None or self.board[0][2]['type'] != 'bishop':  # White bishops
+        if self.board[0][1] is None or self.board[0][1]['type'] != 'knight':  # White knight b1 moved
             development_bonus += 10
-        if self.board[0][5] is None or self.board[0][5]['type'] != 'bishop':
+        if self.board[0][6] is None or self.board[0][6]['type'] != 'knight':  # White knight g1 moved
             development_bonus += 10
-        if self.board[7][2] is None or self.board[7][2]['type'] != 'bishop':  # Black bishops
+        if self.board[7][1] is None or self.board[7][1]['type'] != 'knight':  # Black knight b8 moved
             development_bonus -= 10
-        if self.board[7][5] is None or self.board[7][5]['type'] != 'bishop':
+        if self.board[7][6] is None or self.board[7][6]['type'] != 'knight':  # Black knight g8 moved
             development_bonus -= 10
 
         score += development_bonus
@@ -612,6 +603,10 @@ class ChessBot:
         if not moves:
             return None
 
+        print(f"\n=== Bot thinking ({self.current_player}) ===")
+        print(f"Evaluating {len(moves)} possible moves...")
+        self.print_board()
+
         for move in moves:
             original_piece = self.board[move['to_row']][move['to_col']]
             self.board[move['to_row']][move['to_col']] = self.board[move['from_row']][move['from_col']]
@@ -625,6 +620,13 @@ class ChessBot:
             self.board[move['to_row']][move['to_col']] = original_piece
             self.current_player = original_player
 
+            # Debug: show top moves
+            if is_maximizing and move_value > best_value - 100:  # Show moves within 100 points of best
+                piece_type = move['piece']['type']
+                from_pos = f"{chr(97 + move['from_col'])}{8 - move['from_row']}"
+                to_pos = f"{chr(97 + move['to_col'])}{8 - move['to_row']}"
+                print(f"  {piece_type} {from_pos}->{to_pos}: {move_value:.1f}")
+
             if is_maximizing:
                 if move_value > best_value:
                     best_value = move_value
@@ -633,6 +635,12 @@ class ChessBot:
                 if move_value < best_value:
                     best_value = move_value
                     best_move = move
+
+        if best_move:
+            piece_type = best_move['piece']['type']
+            from_pos = f"{chr(97 + best_move['from_col'])}{8 - best_move['from_row']}"
+            to_pos = f"{chr(97 + best_move['to_col'])}{8 - best_move['to_row']}"
+            print(f"Selected: {piece_type} {from_pos}->{to_pos} (score: {best_value:.1f})")
 
         return best_move
 
