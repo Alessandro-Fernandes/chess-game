@@ -9,7 +9,7 @@ CORS(app)
 class ChessBot:
     def __init__(self):
         self.board = self.initialize_board()
-        self.current_player = 'black'
+        self.current_player = 'white'
         self.piece_values = {
             'pawn': 10,
             'knight': 30,
@@ -49,7 +49,7 @@ class ChessBot:
         self.pawn_table_black = [
             [-100,  -100,  -100,  -100,  -100,  -100,  -100,  -100],
             [-50, -50, -50, -50, -50, -50, -50, -50],
-            [-5, -5, 0, -10, -10000000, 0, 0, 0],
+            [-5, -5, 0, -10, -10, 0, 0, 0],
             [0,  0, 0, -20, -20, 0,  0,  0],
             [0,  10,  10, -40, -40,  10,  10,  0],
             [-5, 5, 5,  -10,  -10,-5, -5,  5],
