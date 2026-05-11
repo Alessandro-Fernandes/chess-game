@@ -481,21 +481,59 @@ class ChessBot:
                         black_mobility += len(self.get_legal_moves_for_piece(row, col))
 
         # Add mobility bonus (scaled down to not overpower material)
-        mobility_bonus = (white_mobility - black_mobility) * 2
+        mobility_bonus = (white_mobility - black_mobility) * 2  # Back to ×2 as requested
         score += mobility_bonus
 
-        # Add center control bonus
+        # Add center control bonus - more important!
         center_squares = [(3,3), (3,4), (4,3), (4,4)]
         center_control = 0
         for row, col in center_squares:
             piece = self.board[row][col]
             if piece:
                 if piece['color'] == 'white':
-                    center_control += 10  # Bonus for controlling center
+                    center_control += 25  # Increased from 10 to 25
                 else:
-                    center_control -= 10
+                    center_control -= 25
 
         score += center_control
+
+        # Add extended center control (squares around center)
+        extended_center = [(2,2), (2,3), (2,4), (2,5), (3,2), (3,5), (4,2), (4,5), (5,2), (5,3), (5,4), (5,5)]
+        extended_control = 0
+        for row, col in extended_center:
+            piece = self.board[row][col]
+            if piece:
+                if piece['color'] == 'white':
+                    extended_control += 10
+                else:
+                    extended_control -= 10
+
+        score += extended_control
+
+        # Development bonus - encourage moving pieces from starting positions
+        development_bonus = 0
+
+        # Knights should move from starting corners
+        if self.board[0][1] is None or self.board[0][1]['type'] != 'knight':  # White knight developed
+            development_bonus += 15
+        if self.board[0][6] is None or self.board[0][6]['type'] != 'knight':
+            development_bonus += 15
+        if self.board[7][1] is None or self.board[7][1]['type'] != 'knight':  # Black knight developed
+            development_bonus -= 15
+        if self.board[7][6] is None or self.board[7][6]['type'] != 'knight':
+            development_bonus -= 15
+
+        # Bishops should move from starting positions
+        if self.board[0][2] is None or self.board[0][2]['type'] != 'bishop':  # White bishops
+            development_bonus += 10
+        if self.board[0][5] is None or self.board[0][5]['type'] != 'bishop':
+            development_bonus += 10
+        if self.board[7][2] is None or self.board[7][2]['type'] != 'bishop':  # Black bishops
+            development_bonus -= 10
+        if self.board[7][5] is None or self.board[7][5]['type'] != 'bishop':
+            development_bonus -= 10
+
+        score += development_bonus
 
         return score
 
@@ -555,9 +593,17 @@ class ChessBot:
 
             return min_eval
 
-    def get_best_move(self, depth=5):
+    def get_best_move(self, depth=7):
         best_move = None
-        best_value = float('-inf')
+
+        # Initialize based on current player
+        if self.current_player == 'white':
+            best_value = float('-inf')  # White maximizes
+            is_maximizing = True
+        else:
+            best_value = float('inf')   # Black minimizes
+            is_maximizing = False
+
         alpha = float('-inf')
         beta = float('inf')
 
@@ -579,9 +625,14 @@ class ChessBot:
             self.board[move['to_row']][move['to_col']] = original_piece
             self.current_player = original_player
 
-            if move_value > best_value:
-                best_value = move_value
-                best_move = move
+            if is_maximizing:
+                if move_value > best_value:
+                    best_value = move_value
+                    best_move = move
+            else:
+                if move_value < best_value:
+                    best_value = move_value
+                    best_move = move
 
         return best_move
 
