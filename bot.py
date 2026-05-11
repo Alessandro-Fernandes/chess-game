@@ -421,7 +421,10 @@ class ChessBot:
 
     def evaluate_board(self):
         score = 0
+        white_mobility = 0
+        black_mobility = 0
 
+        # Evaluate material and position
         for row in range(8):
             for col in range(8):
                 piece = self.board[row][col]
@@ -464,7 +467,35 @@ class ChessBot:
                         else:
                             position_value = self.king_table_black[7-row][col]
 
-                    score += 2 * value + position_value
+                    # Add piece value and position to score
+                    piece_score = value + position_value
+                    if piece['color'] == 'white':
+                        score += piece_score
+                    else:
+                        score -= piece_score
+
+                    # Count mobility for each side
+                    if piece['color'] == 'white':
+                        white_mobility += len(self.get_legal_moves_for_piece(row, col))
+                    else:
+                        black_mobility += len(self.get_legal_moves_for_piece(row, col))
+
+        # Add mobility bonus (scaled down to not overpower material)
+        mobility_bonus = (white_mobility - black_mobility) * 2
+        score += mobility_bonus
+
+        # Add center control bonus
+        center_squares = [(3,3), (3,4), (4,3), (4,4)]
+        center_control = 0
+        for row, col in center_squares:
+            piece = self.board[row][col]
+            if piece:
+                if piece['color'] == 'white':
+                    center_control += 10  # Bonus for controlling center
+                else:
+                    center_control -= 10
+
+        score += center_control
 
         return score
 
@@ -566,7 +597,7 @@ def get_bot_move():
         bot.set_board_from_js(board)
         bot.current_player = current_player
 
-        best_move = bot.get_best_move(depth=5)
+        best_move = bot.get_best_move(depth=7)
 
         if best_move:
             return jsonify({
